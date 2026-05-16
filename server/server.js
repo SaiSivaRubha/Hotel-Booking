@@ -5,37 +5,66 @@ import connectDB from "./configs/db.js";
 import { clerkMiddleware } from '@clerk/express'
 import clerkWebhooks from "./controllers/clerkWebhooks.js";
 import paymentRoute from "./routes/payments.js"
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { clerkMiddleware } from '@clerk/express';
+import connectDB from './configs/db.js';
+import bookingRoutes from './routes/bookingRoutes.js';
+import clerkWebhooks from './controllers/clerkWebhooks.js';
+import paymentRoutes from './routes/paymentRoutes.js';
+
+// Add this at the very top, before other imports
+import 'dotenv/config';
+
+dotenv.config();
+
+// Connect to MongoDB
 connectDB();
 
 const app = express();
+const PORT = process.env.PORT || 5000;
 
-app.use(cors()); // Enable Cross-Origin Resource Sharing
-//MiddleWare
+app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
+
+// Clerk webhook needs raw body (BEFORE express.json())
+app.post('/api/webhooks/clerk', express.raw({type: 'application/json'}), clerkWebhooks);
+
+// Regular JSON parsing
 app.use(express.json());
-app.use(clerkMiddleware());
-
-
-//API to listen to clerk Webhooks
 
 app.use('/api/clerk', clerkWebhooks);
 app.use("/api/payment",paymentRoute);
 app.get('/', (req, res) => {
     res.send("API is Up and running");
+// Attach Clerk middleware (parses auth tokens)
+app.use(clerkMiddleware());
+
+// Health check route
+app.get('/health', (_req, res) => {
+  console.log('✅ Health check called');
+  res.json({ ok: true, message: 'Server is running' });
 });
 
-//404 error handling
-app.use((req,res,next)=>{
-    res.status(404).json({message:"Route not found"});
-   
+// Booking routes
+app.use('/api/bookings', bookingRoutes);
+
+// Payment routes
+app.use('/api/payments', paymentRoutes);
+
+// 404 handler (keep last)
+app.use((req, res) => {
+  console.log('❌ 404:', req.method, req.url);
+  res.status(404).json({ message: 'Route not found' });
 });
 
-//global error handler
-app.use((err,req,res,next)=>{
-    console.error(err.stack);
-    res.status(500).json({message:"Internal Server Error"});
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('❌ Server Error:', err);
+  res.status(500).json({ message: 'Internal server error', error: err.message });
 });
-const PORT = process.env.PORT  || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`)
+  console.log(`\n✅ Server is running on http://localhost:${PORT}`);
+  console.log(`✅ Health check: http://localhost:${PORT}/health\n`);
 });
